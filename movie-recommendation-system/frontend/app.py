@@ -1,74 +1,41 @@
-import streamlit as st  # Import Streamlit for the frontend interface
-import requests  # Import requests to make HTTP requests to the backend
+import streamlit as st
+import requests
 
-# Setup the title of the streamlit application
+# Title and description
+st.title("Netflix Recommendation System")
+st.markdown("""
+This app recommends Netflix shows and movies based on the title you input. 
+It filters results by genre and shared cast members.
+""")
 
-st.title("Netflix Movie/Show Recommendation App")
+# Input section
+title = st.text_input("Enter a Netflix show or movie title", "")
 
-# Input box for the user to enter a movie title
-tv_title = st.text_input("Enter a movie or show title:")
-
-# KNN Recommendations Button
-if st.button("Get KNN Recommendations"):
-    if tv_title:
+# Button to get recommendations
+if st.button("Get Recommendations"):
+    if title.strip():
         try:
-            # Send a POST request to the Flask backend for KNN recommendations
-            response = requests.post('http://localhost:5000/recommend_knn', json={'title': tv_title})
-            # Get the recommendations from the response
-            recommendations = response.json()  
-            
-            if 'error' in recommendations:
-                # Display error if there is one
-                st.error(recommendations['error'])
+            # Send request to Flask backend
+            response = requests.post(
+                "http://127.0.0.1:5000/recommend",  # Adjust this URL if Flask runs on a different host/port
+                json={"title": title}
+            )
+            # Handle response
+            if response.status_code == 200:
+                recommendations = response.json()
+                if recommendations:
+                    st.success("Here are the recommendations:")
+                    for idx, rec in enumerate(recommendations, 1):
+                        st.write(f"{idx}. {rec}")
+                else:
+                    st.warning("No recommendations found. Try another title!")
             else:
-                # Display the top 5 KNN recommendations
-                st.write("Top 5 KNN Recommendations:")
-                for tv in recommendations:
-                    st.write(tv)
-        except Exception as e:
-            st.error(f"Error: {str(e)}")  # Display any errors
+                st.error(f"Error: {response.json().get('error', 'Unknown error')}")
+        except requests.exceptions.RequestException as e:
+            st.error(f"Error connecting to backend: {e}")
     else:
-        st.warning("Please enter a movie or show title.")  # Warn if no title is entered
-        
-# K-Means Recommendations button
-if st.button("Get K-Means Recommendations"):
-    if tv_title:
-        try:
-            # Send a POST request to the Flask backend for K-Means recommendations
-            response = requests.post('http://localhost:5000/recommend_kmeans', json={'title': tv_title})
-            recommendations = response.json()  # Get the recommendations from the response
-            
-            if 'error' in recommendations:
-                # Display error if there is one
-                st.error(recommendations['error'])
-            else:
-                # Display the top 5 K-Means recommendations
-                st.write("Top 5 K-Means Recommendations:")
-                for movie in recommendations:
-                    st.write(movie)
-        except Exception as e:
-            st.error(f"Error: {str(e)}")  # Display any errors
-    else:
-        st.warning("Please enter a movie or show title.")  # Warn if no title is entered
+        st.warning("Please enter a title.")
 
-# SVD Recommendations button
-if st.button("Get SVD Recommendations"):
-    if tv_title:
-        try:
-            # Send a POST request to the Flask backend for SVD recommendations
-            response = requests.post('http://localhost:5000/recommend_svd', json={'title': tv_title})
-             # Get the recommendations from the response
-            recommendations = response.json() 
-            
-            if 'error' in recommendations:
-                # Display error if there is one
-                st.error(recommendations['error'])
-            else:
-                # Display the top 5 SVD recommendations
-                st.write("Top 5 SVD Recommendations:")
-                for movie in recommendations:
-                    st.write(movie)
-        except Exception as e:
-            st.error(f"Error: {str(e)}")  # Display any errors
-    else:
-        st.warning("Please enter a movie or show title.")  # Warn if no title is entered
+# Footer
+st.markdown("---")
+st.caption("Netflix Recommendation System | Powered by Flask & Streamlit")

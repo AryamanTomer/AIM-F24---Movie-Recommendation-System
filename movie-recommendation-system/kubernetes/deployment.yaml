@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: knn-deployment
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: knn
+  template:
+    metadata:
+      labels:
+        app: knn
+    spec:
+      containers:
+      - name: knn-container
+        image: <your-image-name>:<tag>
+        ports:
+        - containerPort: 8000

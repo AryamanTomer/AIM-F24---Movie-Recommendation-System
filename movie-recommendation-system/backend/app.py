@@ -57,6 +57,7 @@ def get_recommendations(title, binary_data, df, model):
         return None
 
     idx = df[df['title'] == title].index.item()
+    # Use DataFrame to maintain feature names
     title_vector = binary_data.iloc[idx].to_numpy().reshape(1, -1)
 
     # Get nearest neighbors (excluding the movie itself)

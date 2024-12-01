@@ -1,60 +1,95 @@
 from flask import Flask, request, jsonify
 import pandas as pd
-from sklearn.preprocessing import StandardScaler
-from sklearn.metrics.pairwise import cosine_similarity
+import numpy as np
+import re
+import faiss
 
+# Initialize Flask app
 app = Flask(__name__)
 
-# Loading the dataset
-df_tv = pd.read_csv('netflix_titles.csv')
+# Load and preprocess the dataset once
+movies = pd.read_csv('netflix_titles.csv')
 
-# Dropping the rows with missing values
-df_tv = df_tv[['title', 'release_year', 'duration', 'listed_in', 'cast']].dropna()
+# Filter to include only Movies (optional; adjust as needed)
+movies = movies[movies['type'] == 'Movie'].reset_index()
 
-# Extract the 1st genre listed in 'listed_in'
-df_tv['listed_in'] = df_tv['listed_in'].apply(lambda x: x.split(',')[0])
+# Preprocess: Drop unused columns
+movies = movies.drop(
+    ['index', 'show_id', 'type', 'date_added', 'release_year', 'duration', 'description'], axis=1
+)
 
-# Preprocessing the cast by splitting on commas (assuming cast is a comma-separated string)
-df_tv['cast'] = df_tv['cast'].apply(lambda x: x.split(','))
+# Preprocess data to create binary matrices for countries and genres
+def preprocess_data(df):
+    def create_binary_matrix(column):
+        unique_items = set()
+        for entry in df[column].dropna():
+            items = re.split(r',\s*', entry)
+            unique_items.update(items)
 
-# Prepare features (listed_in and cast)
-df_tv['listed_in'] = df_tv['listed_in'].astype('category')
-df_tv['cast'] = df_tv['cast'].apply(lambda x: [actor.strip().lower() for actor in x])  # Clean up actors' names
+        unique_items = sorted(unique_items)
+        matrix = []
+        for entry in df[column]:
+            row = [
+                1.0 if item in (entry if pd.notna(entry) else '') else 0.0 for item in unique_items
+            ]
+            matrix.append(row)
 
-# Define the route to get recommendations
+        return pd.DataFrame(matrix, columns=unique_items)
+
+    binary_countries = create_binary_matrix('country')
+    binary_genres = create_binary_matrix('listed_in')
+
+    return pd.concat([binary_countries, binary_genres], axis=1)
+
+# Preprocess data once at the start
+binary_movies = preprocess_data(movies)
+
+# Convert the dataframe into a numpy array
+movie_vectors = binary_movies.to_numpy().astype('float32')
+
+# Build the FAISS index
+index = faiss.IndexFlatL2(movie_vectors.shape[1])  # L2 distance (Euclidean)
+index.add(movie_vectors)
+
+# Recommendation function using FAISS
+def get_recommendations(title, df, index, k=6):
+    if title not in df['title'].values:
+        return None
+
+    idx = df[df['title'] == title].index.item()
+    title_vector = movie_vectors[idx].reshape(1, -1)
+
+    # Get nearest neighbors (excluding the movie itself)
+    distances, indices = index.search(title_vector, k)
+
+    recommendations = []
+    for i in range(1, len(indices[0])):  # Skip the first movie (itself)
+        neighbor_idx = indices[0][i]
+        recommendations.append(df.iloc[neighbor_idx]['title'])
+
+    return recommendations
+
+# Flask routes
+@app.route('/')
+def home():
+    return jsonify({"message": "Welcome to the Netflix Movie Recommendation API!"})
+
 @app.route('/recommend', methods=['POST'])
 def recommend():
-    try:
-        # Get the TV Show / Movie title from the POST request
-        tv_title = request.json['title']
+    # Extract title from the JSON request body
+    data = request.get_json()
+    title = data.get('title', '')
 
-        # Find the index of the TV show/movie in the dataset
-        tv_index = df_tv[df_tv['title'].str.contains(tv_title, case=False)].index[0]
+    if not title:
+        return jsonify({"error": "Please provide a movie title."}), 400
 
-        # Step 1: Filter by 'listed_in' (primary filter)
-        genre = df_tv.iloc[tv_index]['listed_in']
-        genre_filtered = df_tv[df_tv['listed_in'] == genre]
+    # Get recommendations
+    recommendations = get_recommendations(title, movies, index)
+    if recommendations is None:
+        return jsonify({"error": "Movie not found in the dataset."}), 404
 
-        # Step 2: Further filter by 'cast' (secondary filter)
-        target_cast = df_tv.iloc[tv_index]['cast']
-        recommendations = []
+    return jsonify({"title": title, "recommendations": recommendations})
 
-        for idx, row in genre_filtered.iterrows():
-            # Calculate the intersection of cast members (shared actors)
-            common_cast = set(target_cast) & set(row['cast'])
-            if common_cast:
-                recommendations.append((row['title'], len(common_cast)))  # Add the number of shared cast members as a tie-breaker
-
-        # Sort recommendations by the number of shared cast members (descending)
-        recommendations.sort(key=lambda x: x[1], reverse=True)
-
-        # Get top 5 recommendations based on shared cast members
-        top_recommendations = [item[0] for item in recommendations[:5]]
-
-        return jsonify(top_recommendations)
-
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
 
 # Run the Flask app
 if __name__ == '__main__':

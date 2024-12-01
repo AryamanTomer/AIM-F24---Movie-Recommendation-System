@@ -22,9 +22,10 @@ if st.button("Get Recommendations"):
             )
             # Handle response
             if response.status_code == 200:
-                recommendations = response.json()
+                data = response.json()  # Parse JSON response
+                recommendations = data.get("recommendations", [])
                 if recommendations:
-                    st.success("Here are the recommendations:")
+                    st.success(f"Here are the recommendations for '{data.get('title', '')}':")
                     for idx, rec in enumerate(recommendations, 1):
                         st.write(f"{idx}. {rec}")
                 else:

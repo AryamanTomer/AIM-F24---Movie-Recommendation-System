@@ -15,5 +15,5 @@ spec:
       containers:
       - name: knn-container
         image: <your-image-name>:<tag>
-        ports:
-        - containerPort: 8000
+  ports:
+  - containerPort: 5000
